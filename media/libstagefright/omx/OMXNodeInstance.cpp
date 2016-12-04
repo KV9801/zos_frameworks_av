@@ -212,7 +212,6 @@ OMXNodeInstance::OMXNodeInstance(
       mNodeID(0),
       mHandle(NULL),
       mObserver(observer),
-      mDying(false),
       mSailed(false),
       mQueriedProhibitedExtensions(false),
       mBufferIDCount(0)
@@ -788,7 +787,7 @@ status_t OMXNodeInstance::useBuffer(
         OMX_U32 portIndex, const sp<IMemory> &params,
         OMX::buffer_id *buffer, OMX_U32 allottedSize) {
     if (params == NULL || buffer == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -800,7 +799,11 @@ status_t OMXNodeInstance::useBuffer(
     // metadata buffers are not connected cross process
     // use a backup buffer instead of the actual buffer
     BufferMeta *buffer_meta;
+#ifdef CAMCORDER_GRALLOC_SOURCE
+    bool useBackup = false;
+#else
     bool useBackup = mMetadataType[portIndex] != kMetadataBufferTypeInvalid;
+#endif
     OMX_U8 *data = static_cast<OMX_U8 *>(params->pointer());
     // allocate backup buffer
     if (useBackup) {
@@ -862,7 +865,7 @@ status_t OMXNodeInstance::useGraphicBuffer2_l(
         OMX_U32 portIndex, const sp<GraphicBuffer>& graphicBuffer,
         OMX::buffer_id *buffer) {
     if (graphicBuffer == NULL || buffer == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -918,7 +921,7 @@ status_t OMXNodeInstance::useGraphicBuffer(
         OMX_U32 portIndex, const sp<GraphicBuffer>& graphicBuffer,
         OMX::buffer_id *buffer) {
     if (graphicBuffer == NULL || buffer == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
     Mutex::Autolock autoLock(mLock);
@@ -983,7 +986,7 @@ status_t OMXNodeInstance::updateGraphicBufferInMeta_l(
         OMX::buffer_id buffer, OMX_BUFFERHEADERTYPE *header, bool updateCodecBuffer) {
     // No need to check |graphicBuffer| since NULL is valid for it as below.
     if (header == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -1040,7 +1043,7 @@ status_t OMXNodeInstance::updateNativeHandleInMeta(
     OMX_BUFFERHEADERTYPE *header = findBufferHeader(buffer, portIndex);
     // No need to check |nativeHandle| since NULL is valid for it as below.
     if (header == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -1148,7 +1151,7 @@ status_t OMXNodeInstance::createInputSurface(
         OMX_U32 portIndex, android_dataspace dataSpace,
         sp<IGraphicBufferProducer> *bufferProducer, MetadataBufferType *type) {
     if (bufferProducer == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -1170,7 +1173,7 @@ status_t OMXNodeInstance::createPersistentInputSurface(
         sp<IGraphicBufferProducer> *bufferProducer,
         sp<IGraphicBufferConsumer> *bufferConsumer) {
     if (bufferProducer == NULL || bufferConsumer == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
     String8 name("GraphicBufferSource");
@@ -1223,7 +1226,13 @@ status_t OMXNodeInstance::allocateSecureBuffer(
         OMX_U32 portIndex, size_t size, OMX::buffer_id *buffer,
         void **buffer_data, sp<NativeHandle> *native_handle) {
     if (buffer == NULL || buffer_data == NULL || native_handle == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
+        return BAD_VALUE;
+    }
+
+    if (portIndex >= NELEM(mSecureBufferType)) {
+        ALOGE("b/31385713, portIndex(%u)", portIndex);
+        android_errorWriteLog(0x534e4554, "31385713");
         return BAD_VALUE;
     }
 
@@ -1281,7 +1290,7 @@ status_t OMXNodeInstance::allocateBufferWithBackup(
         OMX_U32 portIndex, const sp<IMemory> &params,
         OMX::buffer_id *buffer, OMX_U32 allottedSize) {
     if (params == NULL || buffer == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -1291,7 +1300,11 @@ status_t OMXNodeInstance::allocateBufferWithBackup(
     }
 
     // metadata buffers are not connected cross process; only copy if not meta
+#ifdef CAMCORDER_GRALLOC_SOURCE
+    bool copy = true;
+#else
     bool copy = mMetadataType[portIndex] == kMetadataBufferTypeInvalid;
+#endif
 
     BufferMeta *buffer_meta = new BufferMeta(
             params, portIndex,
@@ -1340,7 +1353,7 @@ status_t OMXNodeInstance::freeBuffer(
 
     OMX_BUFFERHEADERTYPE *header = findBufferHeader(buffer, portIndex);
     if (header == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
     BufferMeta *buffer_meta = static_cast<BufferMeta *>(header->pAppPrivate);
@@ -1360,7 +1373,7 @@ status_t OMXNodeInstance::fillBuffer(OMX::buffer_id buffer, int fenceFd) {
 
     OMX_BUFFERHEADERTYPE *header = findBufferHeader(buffer, kPortIndexOutput);
     if (header == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
     header->nFilledLen = 0;
@@ -1403,16 +1416,36 @@ status_t OMXNodeInstance::emptyBuffer(
 
     OMX_BUFFERHEADERTYPE *header = findBufferHeader(buffer, kPortIndexInput);
     if (header == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
     BufferMeta *buffer_meta =
         static_cast<BufferMeta *>(header->pAppPrivate);
 
+#ifndef CAMCORDER_GRALLOC_SOURCE
     // set up proper filled length if component is configured for gralloc metadata mode
     // ignore rangeOffset in this case (as client may be assuming ANW meta buffers).
     if (mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource) {
         header->nFilledLen = rangeLength ? sizeof(VideoGrallocMetadata) : 0;
+#else
+    sp<ABuffer> backup = buffer_meta->getBuffer(header, true /* backup */, false /* limit */);
+    sp<ABuffer> codec = buffer_meta->getBuffer(header, false /* backup */, false /* limit */);
+
+    // convert incoming ANW meta buffers if component is configured for gralloc metadata mode
+    // ignore rangeOffset in this case
+    if (mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource
+            && backup->capacity() >= sizeof(VideoNativeMetadata)
+            && codec->capacity() >= sizeof(VideoGrallocMetadata)
+            && ((VideoNativeMetadata *)backup->base())->eType
+                    == kMetadataBufferTypeANWBuffer) {
+        VideoNativeMetadata &backupMeta = *(VideoNativeMetadata *)backup->base();
+        VideoGrallocMetadata &codecMeta = *(VideoGrallocMetadata *)codec->base();
+        CLOG_BUFFER(emptyBuffer, "converting ANWB %p to handle %p",
+                backupMeta.pBuffer, backupMeta.pBuffer->handle);
+        codecMeta.pHandle = backupMeta.pBuffer != NULL ? backupMeta.pBuffer->handle : NULL;
+        codecMeta.eType = kMetadataBufferTypeGrallocSource;
+        header->nFilledLen = rangeLength ? sizeof(codecMeta) : 0;
+#endif
         header->nOffset = 0;
     } else {
         // rangeLength and rangeOffset must be a subset of the allocated data in the buffer.
@@ -1546,7 +1579,7 @@ status_t OMXNodeInstance::emptyGraphicBuffer(
         OMX_BUFFERHEADERTYPE *header, const sp<GraphicBuffer> &graphicBuffer,
         OMX_U32 flags, OMX_TICKS timestamp, int fenceFd) {
     if (header == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return BAD_VALUE;
     }
 
@@ -1591,6 +1624,7 @@ inline static const char *asString(IOMX::InternalOptionType i, const char *def =
         case IOMX::INTERNAL_OPTION_MAX_FPS:           return "MAX_FPS";
         case IOMX::INTERNAL_OPTION_START_TIME:        return "START_TIME";
         case IOMX::INTERNAL_OPTION_TIME_LAPSE:        return "TIME_LAPSE";
+        case IOMX::INTERNAL_OPTION_TIME_OFFSET:       return "TIME_OFFSET";
         default:                                      return def;
     }
 }
@@ -1619,6 +1653,7 @@ status_t OMXNodeInstance::setInternalOption(
         case IOMX::INTERNAL_OPTION_MAX_FPS:
         case IOMX::INTERNAL_OPTION_START_TIME:
         case IOMX::INTERNAL_OPTION_TIME_LAPSE:
+        case IOMX::INTERNAL_OPTION_TIME_OFFSET:
         case IOMX::INTERNAL_OPTION_COLOR_ASPECTS:
         {
             const sp<GraphicBufferSource> &bufferSource =
@@ -1645,6 +1680,13 @@ status_t OMXNodeInstance::setInternalOption(
 
                 CLOG_CONFIG(setInternalOption, "delayUs=%lld", (long long)delayUs);
                 return bufferSource->setRepeatPreviousFrameDelayUs(delayUs);
+            } else if (type == IOMX::INTERNAL_OPTION_TIME_OFFSET) {
+                int64_t timeOffsetUs;
+                if (!getInternalOption(data, size, &timeOffsetUs)) {
+                    return INVALID_OPERATION;
+                }
+                CLOG_CONFIG(setInternalOption, "bufferOffsetUs=%lld", (long long)timeOffsetUs);
+                return bufferSource->setInputBufferTimeOffset(timeOffsetUs);
             } else if (type == IOMX::INTERNAL_OPTION_MAX_TIMESTAMP_GAP) {
                 int64_t maxGapUs;
                 if (!getInternalOption(data, size, &maxGapUs)) {
@@ -1704,7 +1746,7 @@ bool OMXNodeInstance::handleMessage(omx_message &msg) {
         OMX_BUFFERHEADERTYPE *buffer =
             findBufferHeader(msg.u.extended_buffer_data.buffer, kPortIndexOutput);
         if (buffer == NULL) {
-            ALOGE("b/25884056");
+            ALOGE("b/25884056 %d", __LINE__);
             return false;
         }
 
@@ -1859,7 +1901,7 @@ OMX_ERRORTYPE OMXNodeInstance::OnEvent(
         OMX_IN OMX_U32 nData2,
         OMX_IN OMX_PTR pEventData) {
     if (pAppData == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return OMX_ErrorBadParameter;
     }
     OMXNodeInstance *instance = static_cast<OMXNodeInstance *>(pAppData);
@@ -1876,7 +1918,7 @@ OMX_ERRORTYPE OMXNodeInstance::OnEmptyBufferDone(
         OMX_IN OMX_PTR pAppData,
         OMX_IN OMX_BUFFERHEADERTYPE* pBuffer) {
     if (pAppData == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return OMX_ErrorBadParameter;
     }
     OMXNodeInstance *instance = static_cast<OMXNodeInstance *>(pAppData);
@@ -1894,7 +1936,7 @@ OMX_ERRORTYPE OMXNodeInstance::OnFillBufferDone(
         OMX_IN OMX_PTR pAppData,
         OMX_IN OMX_BUFFERHEADERTYPE* pBuffer) {
     if (pAppData == NULL) {
-        ALOGE("b/25884056");
+        ALOGE("b/25884056 %d", __LINE__);
         return OMX_ErrorBadParameter;
     }
     OMXNodeInstance *instance = static_cast<OMXNodeInstance *>(pAppData);

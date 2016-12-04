@@ -28,6 +28,8 @@
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
 
+#include <media/stagefright/FFMPEGSoftCodec.h>
+
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -162,6 +164,12 @@ static VideoFrame *extractVideoFrame(
     videoFormat->setInt32("color-format", OMX_COLOR_FormatYUV420Planar);
 
     videoFormat->setInt32("thumbnail-mode", 1);
+
+    // For the thumbnail extraction case, try to allocate single buffer
+    // in both input and output ports. NOTE: This request may fail if
+    // component requires more than that for decoding.
+    videoFormat->setInt32("android._num-input-buffers", 1);
+    videoFormat->setInt32("android._num-output-buffers", 1);
 
     status_t err;
     sp<ALooper> looper = new ALooper;
@@ -509,7 +517,17 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
-        const AString &componentName = matchingCodecs[i];
+        AString componentName;
+        const char* ffmpegComponentName =
+            FFMPEGSoftCodec::overrideComponentName(0, trackMeta, mime, false);
+        if (ffmpegComponentName != NULL) {
+            ALOGV("override compoent %s to %s for video frame extraction.",
+                    matchingCodecs[i].c_str(), ffmpegComponentName);
+            componentName.setTo(ffmpegComponentName);
+        } else {
+            componentName = matchingCodecs[i];
+        }
+
         VideoFrame *frame =
             extractVideoFrame(componentName, trackMeta, source, timeUs, option);
 

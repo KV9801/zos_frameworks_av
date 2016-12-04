@@ -30,6 +30,8 @@
 #include <utils/NativeHandle.h>
 #include <OMX_Audio.h>
 
+#include <system/audio.h>
+
 #define TRACK_BUFFER_TIMING     0
 
 namespace android {
@@ -327,6 +329,9 @@ protected:
     status_t submitOutputMetadataBuffer();
     void signalSubmitOutputMetadataBufferIfEOS_workaround();
     status_t allocateOutputBuffersFromNativeWindow();
+#ifdef USE_SAMSUNG_COLORFORMAT
+    void setNativeWindowColorFormat(OMX_COLOR_FORMATTYPE &eNativeColorFormat);
+#endif
     status_t cancelBufferToNativeWindow(BufferInfo *info);
     status_t freeOutputBuffersNotOwnedByComponent();
     BufferInfo *dequeueBufferFromNativeWindow();
@@ -372,6 +377,10 @@ protected:
             OMX_U32 portIndex,
             int32_t width, int32_t height,
             OMX_VIDEO_CODINGTYPE compressionFormat, float frameRate = -1.0);
+
+    // sets |portIndex| port buffer numbers to be |bufferNum|. NOTE: Component could reject
+    // this setting if the |bufferNum| is less than the minimum buffer num of the port.
+    status_t setPortBufferNum(OMX_U32 portIndex, int bufferNum);
 
     // gets index or sets it to 0 on error. Returns error from codec.
     status_t initDescribeColorAspectsIndex();
@@ -458,11 +467,14 @@ protected:
             int32_t numChannels, int32_t sampleRate, int32_t bitRate,
             int32_t aacProfile, bool isADTS, int32_t sbrMode,
             int32_t maxOutputChannelCount, const drcParams_t& drc,
-            int32_t pcmLimiterEnable);
+            int32_t pcmLimiterEnable,
+            AudioEncoding encoding = kAudioEncodingPcm16bit);
 
-    status_t setupAC3Codec(bool encoder, int32_t numChannels, int32_t sampleRate);
+    status_t setupAC3Codec(bool encoder, int32_t numChannels, int32_t sampleRate,
+            AudioEncoding encoding = kAudioEncodingPcm16bit);
 
-    status_t setupEAC3Codec(bool encoder, int32_t numChannels, int32_t sampleRate);
+    status_t setupEAC3Codec(bool encoder, int32_t numChannels, int32_t sampleRate,
+            AudioEncoding encoding = kAudioEncodingPcm16bit);
 
     status_t selectAudioPortFormat(
             OMX_U32 portIndex, OMX_AUDIO_CODINGTYPE desiredFormat);
@@ -481,9 +493,12 @@ protected:
     status_t setOperatingRate(float rateFloat, bool isVideo);
     status_t getIntraRefreshPeriod(uint32_t *intraRefreshPeriod);
     status_t setIntraRefreshPeriod(uint32_t intraRefreshPeriod, bool inConfigure);
+
+    // Configures temporal layering based on |msg|. |inConfigure| shall be true iff this is called
+    // during configure() call. on success the configured layering is set in |outputFormat|. If
+    // |outputFormat| is mOutputFormat, it is copied to trigger an output format changed event.
     status_t configureTemporalLayers(
-            uint32_t numLayers, uint32_t numBLayers, bool inConfigure,
-            sp<AMessage> &outputFormat);
+            const sp<AMessage> &msg, bool inConfigure, sp<AMessage> &outputFormat);
 
     status_t setMinBufferSize(OMX_U32 portIndex, size_t size);
 
@@ -491,7 +506,7 @@ protected:
     status_t setupH263EncoderParameters(const sp<AMessage> &msg);
     status_t setupAVCEncoderParameters(const sp<AMessage> &msg);
     status_t setupHEVCEncoderParameters(const sp<AMessage> &msg);
-    status_t setupVPXEncoderParameters(const sp<AMessage> &msg);
+    status_t setupVPXEncoderParameters(const sp<AMessage> &msg, sp<AMessage> &outputFormat);
 
     status_t verifySupportForProfileAndLevel(int32_t profile, int32_t level);
 

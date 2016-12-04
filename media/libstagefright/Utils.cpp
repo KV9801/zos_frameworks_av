@@ -46,6 +46,7 @@
 #include <media/AudioParameter.h>
 
 #include <stagefright/AVExtensions.h>
+#include <media/stagefright/FFMPEGSoftCodec.h>
 
 namespace android {
 
@@ -193,7 +194,7 @@ static void parseAacProfileFromCsd(const sp<ABuffer> &csd, sp<AMessage> &format)
 
     OMX_AUDIO_AACPROFILETYPE profile;
     if (profiles.map(audioObjectType, &profile)) {
-        format->setInt32("profile", profile);
+        format->setInt32("aac-profile", profile);
     }
 }
 
@@ -1059,7 +1060,15 @@ status_t convertMetaDataToMessage(
     }
 
     AVUtils::get()->convertMetaDataToMessage(meta, &msg);
+
+    FFMPEGSoftCodec::convertMetaDataToMessageFF(meta, &msg);
     *format = msg;
+
+#if 0
+    ALOGI("convertMetaDataToMessage from:");
+    meta->dumpToLog();
+    ALOGI("  to: %s", msg->debugString(0).c_str());
+#endif
 
     return OK;
 }
@@ -1321,9 +1330,18 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
 
         convertMessageToMetaDataColorAspects(msg, meta);
 
-        int32_t numLayers = 0;
-        if (msg->findInt32("num-temporal-layers", &numLayers) && numLayers > 0) {
-            meta->setInt32(kKeyTemporalLayerCount, numLayers);
+        AString tsSchema;
+        if (msg->findString("ts-schema", &tsSchema)) {
+            unsigned int numLayers = 0;
+            unsigned int numBLayers = 0;
+            char dummy;
+            int tags = sscanf(tsSchema.c_str(), "android.generic.%u%c%u%c",
+                    &numLayers, &dummy, &numBLayers, &dummy);
+            if ((tags == 1 || (tags == 3 && dummy == '+'))
+                    && numLayers > 0 && numLayers < UINT32_MAX - numBLayers
+                    && numLayers + numBLayers <= INT32_MAX) {
+                meta->setInt32(kKeyTemporalLayerCount, numLayers + numBLayers);
+            }
         }
     } else if (mime.startsWith("audio/")) {
         int32_t numChannels;
@@ -1430,8 +1448,10 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     // XXX TODO add whatever other keys there are
     AVUtils::get()->convertMessageToMetaData(msg, meta);
 
+    FFMPEGSoftCodec::convertMessageToMetaDataFF(msg, meta);
+
 #if 0
-    ALOGI("converted %s to:", msg->debugString(0).c_str());
+    ALOGI("convertMessageToMetaData from %s to:", msg->debugString(0).c_str());
     meta->dumpToLog();
 #endif
 }
@@ -1565,8 +1585,6 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
     if (mapMimeToAudioFormat(info.format, mime) != OK) {
         ALOGE(" Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format !", mime);
         return false;
-    } else {
-        ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
     }
 
     info.format  = AVUtils::get()->updateAudioFormat(info.format, meta);
@@ -1579,6 +1597,9 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
     if (AVUtils::get()->canOffloadAPE(meta) != true) {
         return false;
     }
+
+    ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
+
     // Redefine aac format according to its profile
     // Offloading depends on audio DSP capabilities.
     int32_t aacaot = -1;
